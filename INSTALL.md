@@ -368,7 +368,28 @@ Image generation needs no key and already works.
 
 *Optional. About 5 minutes.*
 
-On the **Settings** screen:
+**First, tell it what to write about.** Open **Topics** in the sidebar and paste
+the subjects your Page covers — one per line. A keyword ("Instagram Reels") or a
+full idea ("Why consistency beats going viral") both work, and you can paste a
+whole list at once; duplicates are skipped.
+
+Autopilot takes one topic per post, choosing the one used longest ago, so it
+covers the whole list before repeating anything. The badge **Next up** shows which
+one it will write about next. Switch a topic off to pause it without deleting it,
+or click the pencil to write a post about it right now.
+
+At the top of that screen you choose where subjects come from:
+
+| Option | What autopilot does |
+| --- | --- |
+| **Your topics** *(default)* | Only your list. Uses trending ideas just while the list is empty. |
+| **Mix of both** | Roughly half your topics, half trending ideas. |
+| **Trending ideas** | Ignores your list and uses Google Trends plus evergreen ideas. |
+
+For a business Page, **Your topics** is almost always right — trending ideas are
+general-interest ("backyard garden ideas") and rarely fit a niche.
+
+Then, on the **Settings** screen:
 
 1. Set **Posts per day** — start with 1 or 2 while you see what it writes.
 2. Set your **Timezone**, so posting hours mean what you expect.
@@ -439,6 +460,26 @@ works, the history fills up. Only the audience is limited to you.
 
 ---
 
+## Upgrading an existing install
+
+When you pull a newer version of the app, the database sometimes needs new
+tables or columns. The fix is always the same, and it is safe:
+
+1. Open Supabase → **SQL Editor** → **New query**.
+2. Paste the whole of [`supabase/schema.sql`](supabase/schema.sql) again and click
+   **Run**.
+
+Every statement in that file only creates what is missing. Your posts, settings,
+Facebook connection and topics are left exactly as they are, and running it twice
+does no harm. The app tells you when this is needed — for example, the Topics
+screen shows *"One database step to enable topics"* on an install that predates
+it, and everything else keeps working until you run it.
+
+If your deployment is connected to GitHub, Vercel picks up the new code on its
+own; otherwise redeploy from the Vercel dashboard.
+
+---
+
 ## Troubleshooting
 
 **"Add your Meta App ID and App Secret in Settings first"**
@@ -470,6 +511,16 @@ Expected, and not a bug. While the Meta app is in **Development** mode its posts
 are visible only to people with a role on the app. Switching to **Live** makes
 them public — including the ones already published — and that needs App Review
 for `pages_manage_posts`. See step 7.
+
+**The Topics screen says "One database step to enable topics"**
+Your database was created before topics existed. Run `supabase/schema.sql` again
+in the Supabase SQL editor — see *Upgrading an existing install*. Autopilot keeps
+posting with trending ideas until you do.
+
+**Autopilot is posting generic trending topics, not mine**
+Check the top of the **Topics** screen is set to **Your topics**, and that at
+least one topic on your list is switched on. With no active topics it falls back
+to trending ideas rather than stopping.
 
 **I cannot find the Fork button on GitHub**
 You are probably looking at a repository you already own — GitHub does not offer

@@ -4,10 +4,12 @@ import { publishPostNow } from "@/lib/facebook/publish";
 import { generateContent } from "@/lib/ai/text";
 import { generateImage } from "@/lib/ai/image";
 import { getTrendingTopics } from "@/lib/trends";
+import { markTopicUsed, nextTopic, TopicsTableMissingError } from "@/lib/db/topics";
+import { decideTopicOrigin } from "@/lib/topic-origin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { localParts, startOfTodayIso } from "@/lib/time";
 import { isFacebookConnected } from "@/lib/types";
-import type { Post } from "@/lib/types";
+import type { Post, Topic, TopicSource } from "@/lib/types";
 
 export type AutopilotResult =
   | { ran: true; post: Post }
@@ -21,6 +23,32 @@ export type AutopilotResult =
         | "already_posted_this_slot"
         | "daily_quota_reached";
     };
+
+/**
+ * What the next autopilot post is about. The owner's own list wins unless the
+ * setting says otherwise; trending ideas cover the gap while that list is
+ * empty, and also on databases that predate topics entirely — autopilot must
+ * keep working on an install that has not re-run schema.sql yet.
+ */
+async function chooseTopic(
+  source: TopicSource | undefined
+): Promise<{ text: string; topic: Topic | null }> {
+  let own: Topic | null = null;
+  if (source !== "trending") {
+    try {
+      own = await nextTopic();
+    } catch (err) {
+      if (!(err instanceof TopicsTableMissingError)) throw err;
+    }
+  }
+
+  if (own && decideTopicOrigin(source, true, Math.random()) === "mine") {
+    return { text: own.text, topic: own };
+  }
+
+  const { topics } = await getTrendingTopics();
+  return { text: topics[Math.floor(Math.random() * topics.length)], topic: null };
+}
 
 /**
  * The "fully automatic" half of the product: on each cron tick, decide
@@ -61,8 +89,8 @@ export async function maybeRunAutopilot(): Promise<AutopilotResult> {
     return { ran: false, reason: "daily_quota_reached" };
   }
 
-  const { topics } = await getTrendingTopics();
-  const topic = topics[Math.floor(Math.random() * topics.length)];
+  const chosen = await chooseTopic(settings.topic_source);
+  const topic = chosen.text;
 
   const content = await generateContent(topic);
   const image = await generateImage(`${content.title} — ${topic}`, settings.image_source);
@@ -80,6 +108,10 @@ export async function maybeRunAutopilot(): Promise<AutopilotResult> {
     scheduled_at: null,
     status: "draft",
   });
+
+  // Recorded once the draft exists, so a failure while generating does not
+  // push the topic to the back of the rotation without a post to show for it.
+  if (chosen.topic) await markTopicUsed(chosen.topic);
 
   const published = await publishPostNow(draft.id);
   await updateSettings({ last_auto_post_at: new Date().toISOString() });

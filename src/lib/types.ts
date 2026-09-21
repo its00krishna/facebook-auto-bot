@@ -2,6 +2,21 @@ export type ImageSource = "ai" | "stock";
 export type ImageSourcePref = "ai" | "stock" | "mixed";
 export type PostStatus = "draft" | "scheduled" | "posted" | "failed";
 
+/**
+ * Where autopilot gets its subjects. "mine" rotates through the owner's own
+ * topic list and only borrows trending ideas while that list is empty.
+ */
+export type TopicSource = "mine" | "trending" | "mixed";
+
+export interface Topic {
+  id: string;
+  text: string;
+  enabled: boolean;
+  use_count: number;
+  last_used_at: string | null;
+  created_at: string;
+}
+
 export interface AppSettings {
   id: 1;
   /** Meta app credentials, normally entered in Settings rather than env vars. */
@@ -29,6 +44,8 @@ export interface AppSettings {
   posting_hours: number[];
   timezone: string;
   last_auto_post_at: string | null;
+  /** Absent on databases created before topics existed; treat as "mine". */
+  topic_source?: TopicSource;
   updated_at: string;
 }
 

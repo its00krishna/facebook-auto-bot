@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   FacebookLogo,
@@ -47,6 +48,7 @@ interface SettingsState {
   posts_per_day: number;
   posting_hours: number[];
   timezone: string;
+  topic_source?: "mine" | "trending" | "mixed";
 }
 
 export default function SettingsPage() {
@@ -239,6 +241,10 @@ function SettingsForm() {
               <LinkBreak size={14} /> Disconnect
             </Button>
           ) : (
+            // A plain anchor on purpose: this route answers with a redirect to
+            // Facebook, which needs a full page navigation. <Link> would try to
+            // route it client-side.
+            // eslint-disable-next-line @next/next/no-html-link-for-pages
             <a
               href="/api/facebook/oauth/start"
               aria-disabled={settings.facebook_configured === false}
@@ -463,6 +469,20 @@ function SettingsForm() {
             <h2 className="font-heading font-bold text-foreground">Autopilot</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Let the bot pick a topic and post on its own, with no one clicking anything.
+            </p>
+            <p className="mt-1.5 text-sm text-foreground">
+              Writing about:{" "}
+              <span className="font-semibold">
+                {settings.topic_source === "trending"
+                  ? "trending ideas"
+                  : settings.topic_source === "mixed"
+                    ? "a mix of your topics and trending ideas"
+                    : "your topics"}
+              </span>{" "}
+              ·{" "}
+              <Link href="/dashboard/topics" className="font-medium text-primary hover:underline">
+                Manage topics
+              </Link>
             </p>
           </div>
           <button

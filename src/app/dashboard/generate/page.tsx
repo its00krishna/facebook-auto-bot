@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Sparkle,
   ArrowClockwise,
@@ -24,6 +25,7 @@ type Step = "idle" | "generating" | "ready";
 export default function GeneratePage() {
   const [topic, setTopic] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [ownTopics, setOwnTopics] = useState<string[]>([]);
   const [imagePref, setImagePref] = useState<ImageSourcePref>("ai");
 
   const [step, setStep] = useState<Step>("idle");
@@ -43,6 +45,23 @@ export default function GeneratePage() {
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    // Arriving from the Topics screen's "write now" link. Read directly rather
+    // than through useSearchParams, which would force a Suspense boundary
+    // around the whole form for one optional value.
+    const fromLink = new URLSearchParams(window.location.search).get("topic");
+    if (fromLink) setTopic(fromLink);
+
+    fetch("/api/topics")
+      .then((r) => r.json())
+      .then((d) =>
+        setOwnTopics(
+          (d.topics ?? [])
+            .filter((t: { enabled: boolean }) => t.enabled)
+            .map((t: { text: string }) => t.text)
+        )
+      )
+      .catch(() => {});
+
     fetch("/api/trends")
       .then((r) => r.json())
       .then((d) => setSuggestions(d.topics ?? []))
@@ -210,8 +229,29 @@ export default function GeneratePage() {
           </Button>
         </div>
 
-        {suggestions.length > 0 && (
+        {ownTopics.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
+            <span className="mt-1 text-xs font-medium text-muted-foreground">Your topics:</span>
+            {ownTopics.slice(0, 10).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTopic(t)}
+                className="cursor-pointer rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary transition hover:border-primary"
+              >
+                {t}
+              </button>
+            ))}
+            <Link
+              href="/dashboard/topics"
+              className="mt-0.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
+            >
+              Manage
+            </Link>
+          </div>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
             <span className="mt-1 text-xs font-medium text-muted-foreground">Trending ideas:</span>
             {suggestions.slice(0, 8).map((s) => (
               <button

@@ -1,5 +1,9 @@
 -- Facebook Auto Bot — Supabase schema
--- Run this once in the Supabase SQL editor (Dashboard > SQL Editor > New query).
+-- Run this in the Supabase SQL editor (Dashboard > SQL Editor > New query).
+--
+-- Safe to run again at any time. Every statement only creates what is missing,
+-- so re-running this file is also how an existing install is upgraded after
+-- pulling a newer version of the app — see the "Upgrades" section at the end.
 
 create extension if not exists "pgcrypto";
 
@@ -30,6 +34,7 @@ create table if not exists app_settings (
   posting_hours int[] not null default '{9,13,18}', -- local hours (0-23) the queue is allowed to fire
   timezone text not null default 'Asia/Karachi',
   last_auto_post_at timestamptz, -- prevents the autopilot firing twice in one posting-hour slot
+  topic_source text not null default 'mine',       -- 'mine' | 'trending' | 'mixed'
   updated_at timestamptz not null default now(),
   constraint single_row check (id = 1)
 );
@@ -69,8 +74,38 @@ create table if not exists pages_cache (
   fetched_at timestamptz not null default now()
 );
 
+-- The owner's own topics and keywords. Autopilot writes about these, taking
+-- the least recently used enabled one each time, so the whole list is covered
+-- before anything repeats.
+create table if not exists topics (
+  id uuid primary key default gen_random_uuid(),
+  text text not null,
+  enabled boolean not null default true,
+  use_count integer not null default 0,
+  last_used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- Case-insensitive uniqueness, so pasting the same list twice adds nothing.
+create unique index if not exists topics_text_lower_idx on topics (lower(text));
+create index if not exists topics_rotation_idx on topics (enabled, last_used_at nulls first);
+
 -- Public bucket every generated/sourced image is re-hosted into, so a post's
 -- image keeps working even if the free provider it came from goes down later.
 insert into storage.buckets (id, name, public)
 values ('post-images', 'post-images', true)
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Upgrades
+--
+-- `create table if not exists` leaves an existing table exactly as it was, so
+-- columns added to app_settings after the first public release have to be
+-- added explicitly for installs that already have the table. Each line is a
+-- no-op when the column is already there.
+-- ---------------------------------------------------------------------------
+
+alter table app_settings add column if not exists facebook_app_id text;
+alter table app_settings add column if not exists facebook_app_secret text;
+alter table app_settings add column if not exists facebook_config_id text;
+alter table app_settings add column if not exists topic_source text not null default 'mine';

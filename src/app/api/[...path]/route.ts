@@ -20,6 +20,15 @@ import {
 } from "@/lib/db/posts";
 import { getSettings, updateSettings } from "@/lib/db/settings";
 import {
+  addTopics,
+  deleteTopic,
+  listTopics,
+  MAX_TOPIC_LENGTH,
+  nextTopic,
+  TopicsTableMissingError,
+  updateTopic,
+} from "@/lib/db/topics";
+import {
   fetchAccount,
   fetchPages,
   missingPermissions,
@@ -159,6 +168,22 @@ export async function GET(req: Request, ctx: Ctx) {
       return getPages(url.searchParams.get("refresh") === "1");
     }
 
+    if (route === "topics") {
+      const settings = await getSettings();
+      const source = settings.topic_source ?? "mine";
+      try {
+        const [topics, next] = await Promise.all([listTopics(), nextTopic()]);
+        return json({ ready: true, source, topics, nextId: next?.id ?? null });
+      } catch (err) {
+        // An install that predates topics: report it so the screen can say
+        // how to upgrade, rather than failing the request.
+        if (err instanceof TopicsTableMissingError) {
+          return json({ ready: false, source, topics: [], nextId: null, message: err.message });
+        }
+        throw err;
+      }
+    }
+
     if (route === "facebook/oauth/start") {
       const creds = await getFacebookCredentials(url.origin);
       if (!creds) {
@@ -219,6 +244,12 @@ const CreatePostBody = z.object({
 });
 
 const DefaultPageBody = z.object({ pageId: z.string().min(1) });
+
+// A pasted list is split client-side into lines; 500 is far more than anyone
+// types, and bounds a single request.
+const AddTopicsBody = z.object({
+  texts: z.array(z.string().max(MAX_TOPIC_LENGTH * 2)).min(1).max(500),
+});
 
 const CredentialsBody = z.object({
   appId: z.string().trim().min(5).max(64),
@@ -298,6 +329,17 @@ export async function POST(req: Request, ctx: Ctx) {
         return json({ post: await publishPostNow(post.id) });
       }
       return json({ post });
+    }
+
+    if (route === "topics") {
+      const parsed = AddTopicsBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return json({ error: "Send at least one topic." }, 400);
+      try {
+        return json(await addTopics(parsed.data.texts));
+      } catch (err) {
+        if (err instanceof TopicsTableMissingError) return json({ error: err.message }, 409);
+        throw err;
+      }
     }
 
     // posts/<id>/post-now
@@ -387,6 +429,12 @@ const SettingsBody = z.object({
   posts_per_day: z.number().int().min(1).max(20).optional(),
   posting_hours: z.array(z.number().int().min(0).max(23)).min(1).max(24).optional(),
   timezone: z.string().min(1).max(64).optional(),
+  topic_source: z.enum(["mine", "trending", "mixed"]).optional(),
+});
+
+const UpdateTopicBody = z.object({
+  enabled: z.boolean().optional(),
+  text: z.string().trim().min(1).max(MAX_TOPIC_LENGTH).optional(),
 });
 
 const UpdatePostBody = z.object({
@@ -412,7 +460,23 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (route === "settings") {
       const parsed = SettingsBody.safeParse(await req.json().catch(() => null));
       if (!parsed.success) return json({ error: "Invalid settings payload." }, 400);
-      return json(await publicSettings(await updateSettings(parsed.data)));
+      try {
+        return json(await publicSettings(await updateSettings(parsed.data)));
+      } catch (err) {
+        // Installs made before topics existed lack the column until
+        // schema.sql is run again.
+        if (err instanceof Error && /topic_source/.test(err.message)) {
+          return json({ error: new TopicsTableMissingError().message }, 409);
+        }
+        throw err;
+      }
+    }
+
+    // topics/<id>
+    if (path.length === 2 && path[0] === "topics") {
+      const parsed = UpdateTopicBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return json({ error: "Invalid topic update." }, 400);
+      return json({ topic: await updateTopic(path[1], parsed.data) });
     }
 
     // posts/<id>
@@ -459,6 +523,11 @@ export async function DELETE(req: Request, ctx: Ctx) {
 
     if (path.length === 2 && path[0] === "posts") {
       await deletePostRecord(path[1]);
+      return json({ ok: true });
+    }
+
+    if (path.length === 2 && path[0] === "topics") {
+      await deleteTopic(path[1]);
       return json({ ok: true });
     }
     return notFound();
