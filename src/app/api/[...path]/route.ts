@@ -44,6 +44,8 @@ import { OAUTH_STATE_COOKIE } from "@/lib/facebook/oauth-state";
 import { publishPostNow } from "@/lib/facebook/publish";
 import { maybeRunAutopilot } from "@/lib/autopilot";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { createUploadTarget, isOwnUploadUrl } from "@/lib/storage/uploads";
+import { MAX_CAPTION_LENGTH, validateUpload } from "@/lib/uploads";
 import type { PostStatus } from "@/lib/types";
 
 /**
@@ -243,6 +245,21 @@ const CreatePostBody = z.object({
   scheduledAt: z.string().datetime().optional(),
 });
 
+const UploadSignBody = z.object({
+  contentType: z.string().min(1).max(100),
+  size: z.number().int().positive(),
+});
+
+const UploadPostBody = z.object({
+  mediaUrl: z.string().url(),
+  mediaType: z.enum(["image", "video"]),
+  caption: z.string().max(MAX_CAPTION_LENGTH).default(""),
+  pageId: z.string().min(1),
+  pageName: z.string().min(1),
+  action: z.enum(["draft", "schedule", "post_now"]),
+  scheduledAt: z.string().datetime().optional(),
+});
+
 const DefaultPageBody = z.object({ pageId: z.string().min(1) });
 
 // A pasted list is split client-side into lines; 500 is far more than anyone
@@ -319,6 +336,47 @@ export async function POST(req: Request, ctx: Ctx) {
         image_url: b.imageUrl,
         image_source: b.imageSource,
         link_url: b.linkUrl || null,
+        page_id: b.pageId,
+        page_name: b.pageName,
+        scheduled_at: b.action === "schedule" ? b.scheduledAt! : null,
+        status: b.action === "schedule" ? "scheduled" : "draft",
+      });
+
+      if (b.action === "post_now") {
+        return json({ post: await publishPostNow(post.id) });
+      }
+      return json({ post });
+    }
+
+    if (route === "uploads/sign") {
+      const parsed = UploadSignBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return json({ error: "File type and size are required." }, 400);
+      const invalid = validateUpload(parsed.data.contentType, parsed.data.size);
+      if (invalid) return json({ error: invalid }, 400);
+      return json(await createUploadTarget(parsed.data.contentType));
+    }
+
+    if (route === "posts/upload") {
+      const parsed = UploadPostBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) {
+        return json({ error: parsed.error.issues[0]?.message ?? "Invalid post." }, 400);
+      }
+      const b = parsed.data;
+      if (!isOwnUploadUrl(b.mediaUrl)) {
+        return json({ error: "Upload the file through this app first." }, 400);
+      }
+      if (b.action === "schedule" && !b.scheduledAt) {
+        return json({ error: "scheduledAt is required to schedule a post." }, 400);
+      }
+
+      const post = await createPostRecord({
+        topic: "Manual upload",
+        title: "",
+        description: b.caption.trim(),
+        hashtags: [],
+        image_url: b.mediaUrl,
+        image_source: b.mediaType === "video" ? "upload_video" : "upload",
+        link_url: null,
         page_id: b.pageId,
         page_name: b.pageName,
         scheduled_at: b.action === "schedule" ? b.scheduledAt! : null,

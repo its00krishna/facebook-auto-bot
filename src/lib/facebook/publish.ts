@@ -1,7 +1,7 @@
-import { publishPhoto, NoPageSelectedError } from "@/lib/facebook/client";
+import { publishPhoto, publishVideo, NoPageSelectedError } from "@/lib/facebook/client";
 import { getPost, updatePostRecord } from "@/lib/db/posts";
 import { getSettings } from "@/lib/db/settings";
-import { composeMessage } from "@/lib/types";
+import { composeMessage, isVideoPost } from "@/lib/types";
 import type { Post } from "@/lib/types";
 
 /**
@@ -29,12 +29,10 @@ export async function publishPostNow(postId: string): Promise<Post> {
   }
 
   try {
-    const result = await publishPhoto({
-      pageId,
-      pageToken,
-      message: composeMessage(post, settings.utm_suffix),
-      imageUrl: post.image_url,
-    });
+    const message = composeMessage(post, settings.utm_suffix);
+    const result = isVideoPost(post)
+      ? await publishVideo({ pageId, pageToken, description: message, videoUrl: post.image_url })
+      : await publishPhoto({ pageId, pageToken, message, imageUrl: post.image_url });
 
     return await updatePostRecord(postId, {
       status: "posted",

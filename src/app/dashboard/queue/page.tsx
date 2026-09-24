@@ -5,8 +5,9 @@ import { Rocket, Trash, PencilSimple, X, Check } from "@phosphor-icons/react/dis
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
-import { facebookPostUrl } from "@/lib/types";
+import { facebookPostUrl, postHeadline } from "@/lib/types";
 import type { Post } from "@/lib/types";
+import { PostThumb } from "@/components/dashboard/post-thumb";
 
 function toLocalInputValue(iso: string | null) {
   if (!iso) return "";
@@ -126,12 +127,11 @@ export default function QueuePage() {
           <div className="divide-y divide-border">
             {posts.map((post) => (
               <div key={post.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={post.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                <PostThumb post={post} className="h-16 w-16 rounded-xl" />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="truncate font-medium text-foreground">{post.title}</p>
+                    <p className="truncate font-medium text-foreground">{postHeadline(post)}</p>
                     <StatusBadge status={post.status} />
                   </div>
                   <p className="mt-0.5 truncate text-sm text-muted-foreground">{post.description}</p>

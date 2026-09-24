@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   House,
   MagicWand,
+  UploadSimple,
   Lightbulb,
   ClockCountdown,
   ListChecks,
@@ -23,6 +24,7 @@ import { cn } from "@/lib/cn";
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: House },
   { href: "/dashboard/generate", label: "Generate", icon: MagicWand },
+  { href: "/dashboard/upload", label: "Upload", icon: UploadSimple },
   { href: "/dashboard/topics", label: "Topics", icon: Lightbulb },
   { href: "/dashboard/queue", label: "Queue", icon: ClockCountdown },
   { href: "/dashboard/history", label: "History", icon: ListChecks },
@@ -33,6 +35,7 @@ const NAV = [
 const TITLES: Record<string, string> = {
   "/dashboard": "Overview",
   "/dashboard/generate": "Generate a post",
+  "/dashboard/upload": "Upload a post",
   "/dashboard/topics": "Topics",
   "/dashboard/queue": "Queue",
   "/dashboard/history": "History",
