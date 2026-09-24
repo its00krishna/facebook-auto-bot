@@ -21,8 +21,16 @@ async function loadSettings(): Promise<AppSettings> {
   return data;
 }
 
-async function graph(path: string, params: Record<string, string>, init?: RequestInit) {
-  const url = `${GRAPH_BASE}${path}`;
+// Facebook serves video uploads from a separate host.
+const GRAPH_VIDEO_BASE = GRAPH_BASE.replace("graph.facebook.com", "graph-video.facebook.com");
+
+async function graph(
+  path: string,
+  params: Record<string, string>,
+  init?: RequestInit,
+  opts: { base?: string; timeoutMs?: number } = {}
+) {
+  const url = `${opts.base ?? GRAPH_BASE}${path}`;
   const res = await fetch(init?.method === "POST" ? url : `${url}?${new URLSearchParams(params)}`, {
     ...init,
     ...(init?.method === "POST"
@@ -31,7 +39,7 @@ async function graph(path: string, params: Record<string, string>, init?: Reques
           body: new URLSearchParams(params),
         }
       : {}),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
   });
 
   const body = await res.json().catch(() => null);
@@ -146,4 +154,31 @@ export async function publishPhoto(input: PublishPhotoInput): Promise<{ id: stri
     { method: "POST" }
   );
   return { id: data.post_id ?? data.id };
+}
+
+export interface PublishVideoInput {
+  pageId: string;
+  pageToken: string;
+  description: string;
+  videoUrl: string;
+}
+
+/**
+ * Publishes a video post. Like photos, Facebook downloads the file from
+ * `file_url` itself; the video then finishes processing on Facebook's side.
+ * The timeout stays under the route's 60s function limit.
+ */
+export async function publishVideo(input: PublishVideoInput): Promise<{ id: string }> {
+  const data = await graph(
+    `/${input.pageId}/videos`,
+    {
+      file_url: input.videoUrl,
+      description: input.description,
+      access_token: input.pageToken,
+      published: "true",
+    },
+    { method: "POST" },
+    { base: GRAPH_VIDEO_BASE, timeoutMs: 55_000 }
+  );
+  return { id: data.id };
 }

@@ -1,4 +1,8 @@
-export type ImageSource = "ai" | "stock";
+/**
+ * "upload" and "upload_video" are media the owner uploaded by hand. Storing the
+ * media kind here keeps older databases working without a schema change.
+ */
+export type ImageSource = "ai" | "stock" | "upload" | "upload_video";
 export type ImageSourcePref = "ai" | "stock" | "mixed";
 export type PostStatus = "draft" | "scheduled" | "posted" | "failed";
 
@@ -93,6 +97,18 @@ export interface GeneratedContent {
  * `<page-id>_<post-id>`, and that composite is itself addressable.
  */
 export const facebookPostUrl = (postId: string) => `https://www.facebook.com/${postId}`;
+
+export const isVideoPost = (post: Pick<Post, "image_source">) =>
+  post.image_source === "upload_video";
+
+/** Uploaded posts have no separate title, so lists fall back to the caption. */
+export function postHeadline(post: Pick<Post, "title" | "description" | "image_source">): string {
+  return (
+    post.title.trim() ||
+    post.description.trim().split("\n")[0] ||
+    (isVideoPost(post) ? "Video post" : "Photo post")
+  );
+}
 
 export const isFacebookConnected = (s: Pick<AppSettings, "facebook_user_token">) =>
   Boolean(s.facebook_user_token);

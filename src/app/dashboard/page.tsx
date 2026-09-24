@@ -15,8 +15,9 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { PostsChart } from "@/components/dashboard/posts-chart";
 import { listPosts } from "@/lib/db/posts";
 import { getSettings } from "@/lib/db/settings";
-import { isFacebookConnected } from "@/lib/types";
+import { isFacebookConnected, postHeadline } from "@/lib/types";
 import type { Post } from "@/lib/types";
+import { PostThumb } from "@/components/dashboard/post-thumb";
 
 export const dynamic = "force-dynamic";
 
@@ -217,11 +218,10 @@ export default async function DashboardOverviewPage() {
                 {recent.map((post: Post) => (
                   <tr key={post.id} className="border-b border-border last:border-0">
                     <td className="w-10 py-2.5 pr-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={post.image_url} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                      <PostThumb post={post} className="h-10 w-10 rounded-lg" />
                     </td>
                     <td className="max-w-[220px] truncate py-2.5 pr-3 font-medium text-foreground">
-                      {post.title}
+                      {postHeadline(post)}
                     </td>
                     <td className="hidden py-2.5 pr-3 text-muted-foreground sm:table-cell">
                       {post.page_name ?? "—"}

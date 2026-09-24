@@ -5,8 +5,9 @@ import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
-import { facebookPostUrl } from "@/lib/types";
+import { facebookPostUrl, postHeadline } from "@/lib/types";
 import type { Post, PostStatus } from "@/lib/types";
+import { PostThumb } from "@/components/dashboard/post-thumb";
 
 const FILTERS: { label: string; value: PostStatus | "all" }[] = [
   { label: "All", value: "all" },
@@ -81,10 +82,9 @@ export default function HistoryPage() {
                   <tr key={post.id} className="border-b border-border last:border-0">
                     <td className="max-w-[260px] py-3 pr-3">
                       <div className="flex items-center gap-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={post.image_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        <PostThumb post={post} className="h-10 w-10 rounded-lg" />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{post.title}</p>
+                          <p className="truncate font-medium text-foreground">{postHeadline(post)}</p>
                           {post.status === "failed" && post.error_message && (
                             <p className="truncate text-xs text-destructive">{post.error_message}</p>
                           )}
