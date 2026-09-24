@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   House,
+  ChartBar,
   MagicWand,
   UploadSimple,
   Lightbulb,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/cn";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: House },
+  { href: "/dashboard/insights", label: "Insights", icon: ChartBar },
   { href: "/dashboard/generate", label: "Generate", icon: MagicWand },
   { href: "/dashboard/upload", label: "Upload", icon: UploadSimple },
   { href: "/dashboard/topics", label: "Topics", icon: Lightbulb },

@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/session";
 import { generateContent } from "@/lib/ai/text";
 import { generateImage } from "@/lib/ai/image";
+import { GEMINI_IMAGE_MODEL, GeminiKeyMissingColumnError, verifyGeminiKey } from "@/lib/ai/gemini";
 import { getTrendingTopics } from "@/lib/trends";
 import {
   createPostRecord,
@@ -44,8 +45,14 @@ import { OAUTH_STATE_COOKIE } from "@/lib/facebook/oauth-state";
 import { publishPostNow } from "@/lib/facebook/publish";
 import { maybeRunAutopilot } from "@/lib/autopilot";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { createUploadTarget, isOwnUploadUrl } from "@/lib/storage/uploads";
-import { MAX_CAPTION_LENGTH, validateUpload } from "@/lib/uploads";
+import {
+  completeUpload,
+  isOwnUploadUrl,
+  startUpload,
+  storeUploadPart,
+  UploadError,
+} from "@/lib/storage/uploads";
+import { MAX_CAPTION_LENGTH, UPLOAD_CHUNK_BYTES, validateUpload } from "@/lib/uploads";
 import type { PostStatus } from "@/lib/types";
 
 /**
@@ -127,9 +134,12 @@ async function safely(handler: () => Promise<Response>): Promise<Response> {
 
 /** Tokens must never reach the browser, so they are stripped in one place. */
 async function publicSettings(settings: Awaited<ReturnType<typeof getSettings>>) {
-  const { facebook_user_token, default_page_token, facebook_app_secret, ...safe } = settings;
+  const { facebook_user_token, default_page_token, facebook_app_secret, gemini_api_key, ...safe } =
+    settings;
   return {
     ...safe,
+    gemini_key_set: Boolean(gemini_api_key),
+    gemini_key_hint: gemini_api_key ? `…${gemini_api_key.slice(-4)}` : null,
     // The App ID is public (it travels in the OAuth URL); the secret never
     // leaves the server, so the UI only learns whether one is stored.
     facebook_app_secret_set: Boolean(facebook_app_secret),
@@ -250,6 +260,12 @@ const UploadSignBody = z.object({
   size: z.number().int().positive(),
 });
 
+const UploadCompleteBody = z.object({
+  uploadId: z.string().uuid(),
+  contentType: z.string().min(1).max(100),
+  parts: z.number().int().positive(),
+});
+
 const UploadPostBody = z.object({
   mediaUrl: z.string().url(),
   mediaType: z.enum(["image", "video"]),
@@ -259,6 +275,19 @@ const UploadPostBody = z.object({
   action: z.enum(["draft", "schedule", "post_now"]),
   scheduledAt: z.string().datetime().optional(),
 });
+
+const GeminiKeyBody = z.object({ apiKey: z.string().trim().min(20).max(200) });
+
+async function saveGeminiKey(apiKey: string | null): Promise<Response> {
+  try {
+    return json(await publicSettings(await updateSettings({ gemini_api_key: apiKey })));
+  } catch (err) {
+    if (err instanceof Error && /gemini_api_key/.test(err.message)) {
+      return json({ error: new GeminiKeyMissingColumnError().message }, 409);
+    }
+    throw err;
+  }
+}
 
 const DefaultPageBody = z.object({ pageId: z.string().min(1) });
 
@@ -348,12 +377,37 @@ export async function POST(req: Request, ctx: Ctx) {
       return json({ post });
     }
 
-    if (route === "uploads/sign") {
+    if (route === "uploads/start") {
       const parsed = UploadSignBody.safeParse(await req.json().catch(() => null));
       if (!parsed.success) return json({ error: "File type and size are required." }, 400);
       const invalid = validateUpload(parsed.data.contentType, parsed.data.size);
       if (invalid) return json({ error: invalid }, 400);
-      return json(await createUploadTarget(parsed.data.contentType));
+      return json(startUpload());
+    }
+
+    if (route === "uploads/chunk") {
+      const uploadId = url.searchParams.get("id") ?? "";
+      const index = Number(url.searchParams.get("index"));
+      const declared = Number(req.headers.get("content-length") ?? 0);
+      if (declared > UPLOAD_CHUNK_BYTES) return json({ error: "Chunk too large." }, 413);
+      try {
+        await storeUploadPart(uploadId, index, new Uint8Array(await req.arrayBuffer()));
+      } catch (err) {
+        if (err instanceof UploadError) return json({ error: err.message }, 400);
+        throw err;
+      }
+      return json({ ok: true });
+    }
+
+    if (route === "uploads/complete") {
+      const parsed = UploadCompleteBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return json({ error: "Invalid upload." }, 400);
+      try {
+        return json(await completeUpload(parsed.data.uploadId, parsed.data.contentType, parsed.data.parts));
+      } catch (err) {
+        if (err instanceof UploadError) return json({ error: err.message }, 400);
+        throw err;
+      }
     }
 
     if (route === "posts/upload") {
@@ -450,6 +504,32 @@ export async function POST(req: Request, ctx: Ctx) {
           : {}),
       });
       return json({ ok: true, redirectUri: `${url.origin}/api/facebook/oauth/callback` });
+    }
+
+    if (route === "gemini/key") {
+      const parsed = GeminiKeyBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return json({ error: "Paste a Gemini API key." }, 400);
+      try {
+        await verifyGeminiKey(parsed.data.apiKey);
+      } catch (err) {
+        return json({ error: err instanceof Error ? err.message : "Could not verify the key." }, 400);
+      }
+      return saveGeminiKey(parsed.data.apiKey);
+    }
+
+    if (route === "gemini/key/clear") {
+      return saveGeminiKey(null);
+    }
+
+    if (route === "gemini/test") {
+      const settings = await getSettings();
+      if (!settings.gemini_api_key) return json({ error: "Save a Gemini API key first." }, 400);
+      try {
+        await verifyGeminiKey(settings.gemini_api_key);
+        return json({ ok: true, model: GEMINI_IMAGE_MODEL });
+      } catch (err) {
+        return json({ error: err instanceof Error ? err.message : "Key check failed." }, 400);
+      }
     }
 
     if (route === "facebook/credentials/clear") {

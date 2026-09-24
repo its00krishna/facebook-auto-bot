@@ -16,6 +16,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { GeminiKeyCard, type GeminiKeyState } from "@/components/settings/gemini-key-card";
 import type { ImageSourcePref } from "@/lib/types";
 
 const TIMEZONES = [
@@ -32,7 +33,7 @@ const TIMEZONES = [
   "UTC",
 ];
 
-interface SettingsState {
+interface SettingsState extends GeminiKeyState {
   facebook_connected: boolean;
   /** False when the deployment has no real Meta app credentials. */
   facebook_configured?: boolean;
@@ -424,11 +425,13 @@ function SettingsForm() {
         </div>
       </Card>
 
+      <GeminiKeyCard state={settings} onChange={(next) => setSettings({ ...settings, ...next })} />
+
       {/* Generation preferences */}
       <Card>
         <h2 className="font-heading font-bold text-foreground">Generation preferences</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Every source here is free — no paid API keys required.
+          Every source here works for free. A Gemini key above is optional.
         </p>
 
         <div className="mt-4">

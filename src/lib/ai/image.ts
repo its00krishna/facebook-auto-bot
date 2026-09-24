@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto";
 import { env } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { getSettings } from "@/lib/db/settings";
+import { generateGeminiImage } from "@/lib/ai/gemini";
 import type { ImageSource, ImageSourcePref } from "@/lib/types";
 
 const STORAGE_BUCKET = "post-images";
@@ -23,7 +25,25 @@ export function resolveImageSource(pref: ImageSourcePref): ImageSource {
 const PHOTO_STYLE =
   "single subject, professional photograph, natural light, shallow depth of field, high detail, no text, no watermark, no collage, no grid";
 
+/**
+ * Uses the owner's Gemini key when one is saved, and the free Pollinations
+ * service otherwise — or when Gemini fails, so a quota hiccup never blocks a post.
+ */
 async function fetchAiImageBytes(prompt: string): Promise<Blob> {
+  const geminiKey = await getSettings()
+    .then((s) => s.gemini_api_key)
+    .catch(() => null);
+  if (geminiKey) {
+    try {
+      return await generateGeminiImage(geminiKey, `${prompt}, ${PHOTO_STYLE}`);
+    } catch (err) {
+      console.error("Gemini image generation failed, using Pollinations instead:", err);
+    }
+  }
+  return fetchPollinationsImageBytes(prompt);
+}
+
+async function fetchPollinationsImageBytes(prompt: string): Promise<Blob> {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
     `${prompt}, ${PHOTO_STYLE}`
   )}?width=${WIDTH}&height=${HEIGHT}&nologo=true&seed=${Math.floor(Math.random() * 1_000_000)}`;
@@ -94,7 +114,8 @@ export async function generateImage(
 
 async function upload(blob: Blob, source: ImageSource): Promise<{ url: string; source: ImageSource }> {
   const db = supabaseAdmin();
-  const path = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}.jpg`;
+  const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+  const path = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${ext}`;
   const bytes = new Uint8Array(await blob.arrayBuffer());
 
   const { error } = await db.storage.from(STORAGE_BUCKET).upload(path, bytes, {

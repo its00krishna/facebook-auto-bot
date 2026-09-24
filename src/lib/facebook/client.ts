@@ -24,7 +24,7 @@ async function loadSettings(): Promise<AppSettings> {
 // Facebook serves video uploads from a separate host.
 const GRAPH_VIDEO_BASE = GRAPH_BASE.replace("graph.facebook.com", "graph-video.facebook.com");
 
-async function graph(
+export async function graph(
   path: string,
   params: Record<string, string>,
   init?: RequestInit,

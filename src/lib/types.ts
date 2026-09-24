@@ -50,6 +50,8 @@ export interface AppSettings {
   last_auto_post_at: string | null;
   /** Absent on databases created before topics existed; treat as "mine". */
   topic_source?: TopicSource;
+  /** Optional Google Gemini key for AI images. Absent on older databases. */
+  gemini_api_key?: string | null;
   updated_at: string;
 }
 
