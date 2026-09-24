@@ -18,26 +18,60 @@ import { MAX_CAPTION_LENGTH, UPLOAD_TYPES, validateUpload } from "@/lib/uploads"
 
 type Action = "draft" | "schedule" | "post_now";
 
-/** XHR rather than fetch so the upload can report progress. */
-function uploadWithProgress(url: string, file: File, onProgress: (pct: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append("cacheControl", "3600");
-    form.append("", file);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("x-upsert", "false");
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () =>
-      xhr.status >= 200 && xhr.status < 300
-        ? resolve()
-        : reject(new Error(`Upload failed (${xhr.status}). The file may be too large for your storage plan.`));
-    xhr.onerror = () => reject(new Error("Upload failed. Check your connection and try again."));
-    xhr.send(form);
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status}).`);
+  return data as T;
+}
+
+async function sendChunk(uploadId: string, index: number, chunk: Blob): Promise<void> {
+  const target = `/api/uploads/chunk?id=${uploadId}&index=${index}`;
+  let lastError: unknown;
+  // A dropped mobile connection should not throw away a nearly finished upload.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(target, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: chunk,
+      });
+      if (res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      lastError = new Error(data.error ?? `Upload failed (${res.status}).`);
+      if (res.status < 500) break;
+    } catch {
+      lastError = new Error("Upload failed. Check your internet connection and try again.");
+    }
+    await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+  }
+  throw lastError;
+}
+
+/** Uploads through this app in chunks and returns the file's public URL. */
+async function uploadMedia(file: File, onProgress: (pct: number) => void): Promise<string> {
+  const { uploadId, chunkSize } = await postJson<{ uploadId: string; chunkSize: number }>(
+    "/api/uploads/start",
+    { contentType: file.type, size: file.size }
+  );
+
+  const parts = Math.max(1, Math.ceil(file.size / chunkSize));
+  for (let i = 0; i < parts; i++) {
+    await sendChunk(uploadId, i, file.slice(i * chunkSize, (i + 1) * chunkSize));
+    onProgress(Math.round(((i + 1) / parts) * 95));
+  }
+
+  const { publicUrl } = await postJson<{ publicUrl: string }>("/api/uploads/complete", {
+    uploadId,
+    contentType: file.type,
+    parts,
+  });
+  onProgress(100);
+  return publicUrl;
 }
 
 export default function UploadPage() {
@@ -103,23 +137,15 @@ export default function UploadPage() {
     setSaving(action);
 
     try {
-      const signRes = await fetch("/api/uploads/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: media.file.type, size: media.file.size }),
-      });
-      const target = await signRes.json();
-      if (!signRes.ok) throw new Error(target.error ?? "Could not prepare the upload.");
-
       setProgress(0);
-      await uploadWithProgress(target.signedUrl, media.file, setProgress);
+      const mediaUrl = await uploadMedia(media.file, setProgress);
       setProgress(null);
 
       const res = await fetch("/api/posts/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mediaUrl: target.publicUrl,
+          mediaUrl,
           mediaType: media.mediaType,
           caption,
           pageId: pageId || "unset",

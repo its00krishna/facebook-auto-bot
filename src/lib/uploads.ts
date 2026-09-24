@@ -23,6 +23,10 @@ export const MAX_BYTES: Record<MediaType, number> = {
 
 export const MAX_CAPTION_LENGTH = 5000;
 
+/** Stays under Vercel's ~4.5 MB request body limit for functions. */
+export const UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+export const MAX_UPLOAD_PARTS = Math.ceil(MAX_BYTES.video / UPLOAD_CHUNK_BYTES);
+
 export const UPLOAD_ACCEPT = Object.keys(UPLOAD_TYPES).join(",");
 
 export function formatBytes(bytes: number): string {

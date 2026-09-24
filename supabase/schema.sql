@@ -109,3 +109,4 @@ alter table app_settings add column if not exists facebook_app_id text;
 alter table app_settings add column if not exists facebook_app_secret text;
 alter table app_settings add column if not exists facebook_config_id text;
 alter table app_settings add column if not exists topic_source text not null default 'mine';
+alter table app_settings add column if not exists gemini_api_key text;
